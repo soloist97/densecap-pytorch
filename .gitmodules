@@ -1,0 +1,3 @@
+[submodule "visual_genome_python_driver"]
+	path = visual_genome_python_driver
+	url = https://github.com/ranjaykrishna/visual_genome_python_driver.git
