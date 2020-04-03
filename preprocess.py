@@ -1,5 +1,5 @@
 # coding=utf8
-import re, argparse, json, string
+import re, argparse, json, string, pickle
 from collections import Counter
 
 
@@ -41,13 +41,13 @@ Format in image_data.json
 We assume that all images are on disk in a two folder (VG_100K and VG_100K_2), and that
 the filename for each image is the same as its id with a .jpg extension.
 
-This file will be preprocessed into an HDF5 file and a JSON file with
+This file will be preprocessed into an HDF5 file and a Pickle file with
 some auxiliary information. The captions will be tokenized with some
 basic preprocessing (split by words, remove special characters).
 
 Note, in general any indices anywhere in input/output of this file are 0-indexed.
 
-The output JSON file is an object with the following elements:
+The output Pickle file is an object with the following elements:
 - token_to_idx: Dictionary mapping strings to integers for encoding tokens, 
                 in 1-indexed format.
 - filename_to_idx: Dictionary mapping string filenames to indices.
@@ -66,7 +66,7 @@ M total regions:
 - captions: int32 array of shape (M, L) giving the captions for each region.
   Captions in the input with more than L = --max_token_length tokens are
   discarded. To recover a token from an integer in this matrix,
-  use idx_to_token from the JSON output file. Padded with zeros.
+  use idx_to_token from the Pickle output file. Padded with zeros.
 - img_to_first_box: int32 array of shape (N,). If img_to_first_box[i] = j then
   captions[j] and boxes[j] give the first annotation for image i
   (using one-indexing).
@@ -119,12 +119,17 @@ def build_vocab_dict(vocab):
 
 
 def encode_caption(tokens, token_to_idx, max_token_length):
-    encoded = np.zeros(max_token_length, dtype=np.int64)
+    encoded = np.ones(max_token_length+2, dtype=np.int64) * token_to_idx['<pad>']
+    encoded[0] = token_to_idx['<bos>']
+    encoded[len(tokens)+1] = token_to_idx['<eos>']
+
     for i, token in enumerate(tokens):
+
         if token in token_to_idx:
-            encoded[i] = token_to_idx[token]
+            encoded[i+1] = token_to_idx[token]
         else:
-            encoded[i] = token_to_idx['<unk>']
+            encoded[i+1] = token_to_idx['<unk>']
+
     return encoded
 
 
@@ -151,8 +156,8 @@ def encode_boxes(data, image_data, all_image_ids):
         for region in img['regions']:
             if region['tokens'] is None:
                 continue
-            # recall: original x,y are 1-indexed
-            x1, y1 = region['x'] - 1, region['y'] - 1
+
+            x1, y1 = region['x'], region['y']
             x2, y2 = x1 + region['width'], y1 + region['height']
 
             if x1 < 0: x1 = 0
@@ -219,7 +224,7 @@ def build_directory_dict(data, image_data, all_image_ids):
     next_idx = 0
     for img in data:
 
-        img_info = img_info = image_data[all_image_ids.index(img['id'])]
+        img_info = image_data[all_image_ids.index(img['id'])]
         assert img['id'] == img_info['image_id'], 'id mismatch'
 
         idx_to_directory[next_idx] = re.search('(VG.*)/(.*.jpg)$', img_info['url']).group(1)
@@ -367,7 +372,7 @@ def main(args):
     # captions_matrix (M, max_token_length) 其中M为region总数
     # lengths_vector (M, )
     captions_matrix, lengths_vector = encode_captions(data, token_to_idx, args.max_token_length)
-    f.create_dataset('labels', data=captions_matrix)
+    f.create_dataset('captions', data=captions_matrix)
     f.create_dataset('lengths', data=lengths_vector)
 
     # encode boxes
@@ -387,8 +392,8 @@ def main(args):
     f.create_dataset('box_to_img', data=box_to_img)
     f.close()
 
-    # and write the additional json file
-    json_struct = {
+    # and write the additional pickle file
+    pickle_struct = {
         'token_to_idx': token_to_idx,
         'idx_to_token': idx_to_token,
         'filename_to_idx': filename_to_idx,
@@ -396,8 +401,8 @@ def main(args):
         'idx_to_directory': idx_to_directory,
         'split': split,
     }
-    with open(args.json_output, 'w') as f:
-        json.dump(json_struct, f)
+    with open(args.pickle_output, 'wb') as f:
+        pickle.dump(pickle_struct, f)
 
 
 if __name__ == '__main__':
@@ -415,9 +420,9 @@ if __name__ == '__main__':
                         help='JSON file of splits')
 
     # OUTPUT settings
-    parser.add_argument('--json_output',
-                        default='data/VG-regions-dicts.json',
-                        help='Path to output JSON file')
+    parser.add_argument('--pickle_output',
+                        default='data/VG-regions-dicts.pkl',
+                        help='Path to output pickle file')
     parser.add_argument('--h5_output',
                         default='data/VG-regions.h5',
                         help='Path to output HDF5 file')
