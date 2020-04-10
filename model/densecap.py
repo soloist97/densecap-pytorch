@@ -12,17 +12,19 @@ from model.roi_heads import DenseCapRoIHeads
 
 class DenseCapModel(GeneralizedRCNN):
 
-    def __init__(self,backbone,
+    def __init__(self, backbone, return_features = False,
                  # Caption parameters
                  box_describer=None,
-                 max_len=None, emb_size=None, rnn_num_layers=None, vocab_size=None,
+                 feat_size=None, hidden_size=None, max_len=None,
+                 emb_size=None, rnn_num_layers=None, vocab_size=None,
+                 fusion_type='init_inject',
                  # transform parameters
-                 min_size=800, max_size=1333,  #TODO: change default settings
+                 min_size=300, max_size=720,  # 300不确定
                  image_mean=None, image_std=None,
                  # RPN parameters
                  rpn_anchor_generator=None, rpn_head=None,
                  rpn_pre_nms_top_n_train=2000, rpn_pre_nms_top_n_test=1000,
-                 rpn_post_nms_top_n_train=2000, rpn_post_nms_top_n_test=1000,
+                 rpn_post_nms_top_n_train=2000, rpn_post_nms_top_n_test=300,
                  rpn_nms_thresh=0.7,
                  rpn_fg_iou_thresh=0.7, rpn_bg_iou_thresh=0.3,
                  rpn_batch_size_per_image=256, rpn_positive_fraction=0.5,
@@ -87,11 +89,12 @@ class DenseCapModel(GeneralizedRCNN):
             representation_size = 4096
             box_predictor = FastRCNNPredictor(
                 representation_size,
-                1)
+                2)
 
         if box_describer is None:
             representation_size = 4096
-            box_describer = BoxDescriber(representation_size, max_len, emb_size, rnn_num_layers, vocab_size)
+            box_describer = BoxDescriber(representation_size, feat_size, hidden_size, max_len,
+                                         emb_size, rnn_num_layers, vocab_size, fusion_type)
 
         roi_heads = DenseCapRoIHeads(
             # Caption
@@ -101,7 +104,9 @@ class DenseCapModel(GeneralizedRCNN):
             box_fg_iou_thresh, box_bg_iou_thresh,
             box_batch_size_per_image, box_positive_fraction,
             bbox_reg_weights,
-            box_score_thresh, box_nms_thresh, box_detections_per_img)
+            box_score_thresh, box_nms_thresh, box_detections_per_img,
+            # Whether return features during testing
+            return_features)
 
         if image_mean is None:
             image_mean = [0.485, 0.456, 0.406]
