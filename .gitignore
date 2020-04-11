@@ -132,3 +132,4 @@ dmypy.json
 
 .idea/
 example/
+debug_script.py
