@@ -41,8 +41,8 @@ class BoxDescriber(nn.Module):
 
     def init_hidden(self, batch_size, device):
 
-        h0 = torch.zeros(self.num_layers, batch_size, self.hidden_size).to(device)
-        c0 = torch.zeros(self.num_layers, batch_size, self.hidden_size).to(device)
+        h0 = torch.zeros(self.rnn_num_layers, batch_size, self.hidden_size).to(device)
+        c0 = torch.zeros(self.rnn_num_layers, batch_size, self.hidden_size).to(device)
 
         return h0, c0
 
@@ -67,7 +67,7 @@ class BoxDescriber(nn.Module):
 
         rnn_input_pps = pack_padded_sequence(word_emb, lengths=cap_lens, batch_first=True, enforce_sorted=False)
 
-        rnn_output_pps, _ = self.word_rnn(rnn_input_pps, (h0, c0))
+        rnn_output_pps, _ = self.rnn(rnn_input_pps, (h0, c0))
 
         rnn_output, _ = pad_packed_sequence(rnn_output_pps, batch_first=True, total_length=self.max_len)
 

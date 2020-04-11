@@ -175,8 +175,8 @@ class DenseCapRoIHeads(nn.Module):
         gt_boxes = [t["boxes"].to(dtype) for t in targets]
         gt_captions = [t["caps"] for t in targets]
         gt_captions_length = [t["caps_len"] for t in targets]
-        gt_labels = [torch.ones((_.shape[0],), dtype=torch.int64, device=device) for _ in
-                     len(targets)]  # generate labels LongTensor(1)
+        gt_labels = [torch.ones((t["boxes"].shape[0],), dtype=torch.int64, device=device) for t in
+                     targets]  # generate labels LongTensor(1)
 
         # append ground-truth bboxes to propos
         # List[2*N,4],一个list是一张图片
@@ -315,14 +315,15 @@ class DenseCapRoIHeads(nn.Module):
         if self.training:
             # labels 到这里应该是有0和（1，class-1），0代表背景，其余代表类别，需要剔除背景，然后进行描述(List[Tensor])
             # 也需要滤除对应的caption和caption_length
-            keep_ids = [torch.nonzero(label) for label in labels]
+            keep_ids = [label>0 for label in labels]
             boxes_per_image = [boxes_in_image.shape[0] for boxes_in_image in proposals]
             box_features = box_features.split(boxes_per_image, 0)
+            box_features_gt = []
             for i in range(len(keep_ids)):
-                box_features[i] = box_features[i][keep_ids[i]]
+                box_features_gt.append(box_features[i][keep_ids[i]])
                 caption_gt[i] = caption_gt[i][keep_ids[i]]
                 caption_length[i] = caption_length[i][keep_ids[i]]
-            box_features = torch.cat(box_features, 0)
+            box_features = torch.cat(box_features_gt, 0)
 
         caption_predicts = self.box_describer(box_features, caption_gt, caption_length)
 

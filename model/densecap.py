@@ -5,9 +5,15 @@ from torchvision.ops import MultiScaleRoIAlign
 from torchvision.models.detection.transform import GeneralizedRCNNTransform
 from torchvision.models.detection.rpn import AnchorGenerator, RPNHead, RegionProposalNetwork
 from torchvision.models.detection.generalized_rcnn import GeneralizedRCNN
+from torchvision.models.detection.backbone_utils import resnet_fpn_backbone
 
 from model.box_describer import BoxDescriber
 from model.roi_heads import DenseCapRoIHeads
+
+
+__all__ = [
+    "DenseCapModel", "densecap_resnet50_fpn",
+]
 
 
 class DenseCapModel(GeneralizedRCNN):
@@ -80,20 +86,20 @@ class DenseCapModel(GeneralizedRCNN):
 
         if box_head is None:
             resolution = box_roi_pool.output_size[0]
-            representation_size = 4096
+            representation_size = 4096 if feat_size is None else feat_size
             box_head = TwoMLPHead(
                 out_channels * resolution ** 2,
                 representation_size)
 
         if box_predictor is None:
-            representation_size = 4096
+            representation_size = 4096 if feat_size is None else feat_size
             box_predictor = FastRCNNPredictor(
                 representation_size,
                 2)
 
         if box_describer is None:
-            representation_size = 4096
-            box_describer = BoxDescriber(representation_size, feat_size, hidden_size, max_len,
+            representation_size = 4096 if feat_size is None else feat_size
+            box_describer = BoxDescriber(representation_size, hidden_size, max_len,
                                          emb_size, rnn_num_layers, vocab_size, fusion_type)
 
         roi_heads = DenseCapRoIHeads(
@@ -164,3 +170,11 @@ class FastRCNNPredictor(nn.Module):
         bbox_deltas = self.bbox_pred(x)
 
         return scores, bbox_deltas
+
+
+def densecap_resnet50_fpn(backbone_pretrained=False, **kwargs):
+
+    backbone = resnet_fpn_backbone('resnet50', backbone_pretrained)
+    model = DenseCapModel(backbone, **kwargs)
+
+    return model

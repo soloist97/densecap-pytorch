@@ -142,7 +142,7 @@ def encode_captions(data, token_to_idx, max_token_length):
             if tokens is None: continue
             tokens_encoded = encode_caption(tokens, token_to_idx, max_token_length)
             encoded_list.append(tokens_encoded)
-            lengths.append(len(tokens))
+            lengths.append(len(tokens)+2)
     return np.vstack(encoded_list), np.asarray(lengths, dtype=np.int64)  # in pytorch np.int64 is torch.long
 
 
