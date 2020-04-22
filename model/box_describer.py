@@ -62,8 +62,8 @@ class BoxDescriber(nn.Module):
         feat_emb = self.feature_project_layer(feat)  # (batch_size, embed_size)
 
         h0, c0 = self.init_hidden(batch_size, device)
-        if self.fusion_type == 'inject_init':
-            h0, c0 = self.rnn(feat_emb.unsqueeze(1), (h0, c0))  # first input projected feat emb to rnn
+        if self.fusion_type == 'init_inject':
+            _, (h0, c0) = self.rnn(feat_emb.unsqueeze(1), (h0, c0))  # first input projected feat emb to rnn
 
         rnn_input_pps = pack_padded_sequence(word_emb, lengths=cap_lens, batch_first=True, enforce_sorted=False)
 
@@ -95,29 +95,30 @@ class BoxDescriber(nn.Module):
         keep = torch.arange(batch_size,)  # keep track of unfinished sequences
 
         h, c = self.init_hidden(batch_size, device)
-        if self.fusion_type == 'inject_init':
-            h, c = self.rnn(feat_emb.unsqueeze(1), (h, c))  # first input projected feat emb to rnn
+        if self.fusion_type == 'init_inject':
+            _, (h, c) = self.rnn(feat_emb.unsqueeze(1), (h, c))  # first input projected feat emb to rnn
 
         for i in range(self.max_len):
             word_emb = self.embedding_layer(predicts[keep, i])  # (valid_batch_size, embed_size)
 
             _, (h, c) = self.rnn(word_emb.unsqueeze(1), (h, c))  # (num_layers, valid_batch_size, hidden_size)
 
-            if self.fusion_type == 'inject_init':
+            if self.fusion_type == 'init_inject':
                 rnn_output = h[-1]
             else: # merge
-                rnn_output = torch.cat([h[-1], feat_emb], dim=-1)  # (valid_batch_size, hidden_size + emb_size)
+                rnn_output = torch.cat([h[-1], feat_emb[keep]], dim=-1)  # (valid_batch_size, hidden_size + emb_size)
 
             pred = self.fc_layer(rnn_output)  # (valid_batch_size, vocab_size)
 
             predicts[keep, i+1] = pred.log_softmax(dim=-1).argmax(dim=-1)
 
-            keep = keep[predicts[keep, i+1] != self.special_idx['<eos>']]  # update unfinished indices
+            non_stop = predicts[keep, i+1] != self.special_idx['<eos>']
+            keep = keep[non_stop]  # update unfinished indices
             if keep.nelement() == 0:  # stop if all finished
                 break
             else:
-                h = h[:, predicts[keep, i+1] != self.special_idx['<eos>'], :]
-                c = c[:, predicts[keep, i+1] != self.special_idx['<eos>'], :]
+                h = h[:, non_stop, :]
+                c = c[:, non_stop, :]
 
         return predicts
 

@@ -71,30 +71,34 @@ def pluck_boxes(ix, boxes, text=None):
 
 class DenseCapEvaluator(object):
 
-    def __init__(self):
+    def __init__(self, special_token_list):
 
         self.all_scores = []
         self.records = []
         self.npos = 0
+        self.special_token_list = special_token_list  # tokens in it are not used when score_captions eg. '<bos>'
 
     def score_captions(self):
-
-        meteor_scorer = Meteor()
 
         references = {}
         candidates = {}
         for i, record in enumerate(self.records):
-            references[i] = record['references']
-            candidates[i] = [record['candidate']]
+            references[i] = [' '.join(token for token in ref.split() if token not in self.special_token_list)
+                                for ref in record['references']]
+            candidates[i] = [' '.join(token for token in record['candidate'].split()
+                                if token not in self.special_token_list)]
 
+        if len(references) == 0 or len(candidates) == 0:
+            return 0., [0. for _ in range(len(self.records))]
+
+        meteor_scorer = Meteor()
         meteor, meteor_scores = meteor_scorer.compute_score(references, candidates)
-
         meteor_scorer.close()
 
         return meteor, meteor_scores
 
 
-    def add_result(self, scores, boxes, text, target_boxes, target_text, img_id=None):
+    def add_result(self, scores, boxes, text, target_boxes, target_text, img_info=None):
         """
 
         :param scores: (B,) tensor
@@ -102,10 +106,11 @@ class DenseCapEvaluator(object):
         :param text: length B list of strings
         :param target_boxes: (M x 4) tensor: x1y1x2y2
         :param target_text: length M list of strings
-        :param img_id: string info of input
+        :param img_info: string info of input
         :return:
         """
 
+        assert scores.nelement() > 0, '{} {} {} {}'.format(img_info, scores, boxes, text)
         assert scores.shape[0] == boxes.shape[0]
         assert scores.shape[0] == len(text)
         assert target_boxes.shape[0] == len(target_text)
@@ -113,7 +118,7 @@ class DenseCapEvaluator(object):
 
         # make sure we're on CPU
         boxes = boxes.cpu().double()
-        scores = scores.cpu()
+        scores = scores.view(-1).cpu()
         target_boxes = target_boxes.cpu().double()
 
         # merge ground truth boxes that overlap by >= 0.7
@@ -148,7 +153,7 @@ class DenseCapEvaluator(object):
                 'iou': largest_iou.item(),
                 'candidate': text[cand_idx],
                 'references': merged_text[gt_idx] if largest_iou.item() > 0 else [],
-                'img_id': img_id
+                'img_info': img_info
             }
 
             self.records.append(record)
@@ -171,12 +176,10 @@ class DenseCapEvaluator(object):
                 if record['iou'] > 0 and record['ok'] == 1 and k % 1000 == 0:
                     assert isinstance(record['references'], list)
 
-                    print('-' * 20)
-
                     info_txt = 'IOU: {:.3f} OK: {} SCORE: {:.3F} METEOR: {:.3f}'.format(record['iou'], record['ok'],
                                                                                         scores[k].item(), meteors[k])
-                    if record['img_id'] is not None:
-                        info_txt = 'IMG_ID: {} '.format(record['img_id']) + info_txt
+                    if record['img_info'] is not None:
+                        info_txt = 'IMG_INFO: {} '.format(record['img_info']) + info_txt
                     else:
                         info_txt = 'IDX: {} '.format(k) + info_txt
 

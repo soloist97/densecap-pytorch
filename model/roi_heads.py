@@ -245,13 +245,11 @@ class DenseCapRoIHeads(nn.Module):
             boxes = boxes[:, 1:]
             scores = scores[:, 1:]
             labels = labels[:, 1:]
-            captions = captions[:, 1:]
 
             # batch everything, by making every class prediction be a separate instance
             boxes = boxes.reshape(-1, 4)
             scores = scores.reshape(-1)
             labels = labels.reshape(-1)
-            captions = captions.reshape(-1)
 
             # remove low scoring boxes
             inds = torch.nonzero(scores > self.score_thresh).squeeze(1)
@@ -276,11 +274,7 @@ class DenseCapRoIHeads(nn.Module):
 
         if return_features:
             for inds, keep, box_features in zip(remove_inds_list, keep_list, pred_box_features_list):
-                box_features = box_features[:, 1:]
-                box_features = box_features.reshape(-1)
-                box_features = box_features[inds]
-                box_features = box_features[keep]
-                all_box_features.append(box_features)
+                all_box_features.append(box_features[inds[keep]//(num_classes-1)])
 
         return all_boxes, all_scores, all_captions, all_box_features
 
