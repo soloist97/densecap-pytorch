@@ -7,7 +7,7 @@ from torchvision.ops import boxes as box_ops
 from torchvision.models.detection import _utils as det_utils
 
 
-def detect_loss(class_logits, box_regression, labels, regression_targets):  # TODO: shi
+def detect_loss(class_logits, box_regression, labels, regression_targets):
     """
     Computes the loss for detection part.
     Arguments:
@@ -43,7 +43,7 @@ def detect_loss(class_logits, box_regression, labels, regression_targets):  # TO
     return classification_loss, box_loss
 
 
-def caption_loss(caption_predicts, caption_gt, caption_length):  # TODO: shi
+def caption_loss(caption_predicts, caption_gt, caption_length):
     """
     Computes the loss for caption part.
     Arguments:
@@ -85,7 +85,7 @@ class DenseCapRoIHeads(nn.Module):
                  detections_per_img,
                  # Whether return features during testing
                  return_features=False,
-                 ):  # TODO: shi
+                 ):
 
         super(DenseCapRoIHeads, self).__init__()
 
@@ -163,7 +163,7 @@ class DenseCapRoIHeads(nn.Module):
             sampled_inds.append(img_sampled_inds)
         return sampled_inds
 
-    def select_training_samples(self, proposals, targets):  # TODO: yun
+    def select_training_samples(self, proposals, targets):
         """
         proposals: (List[Tensor[N, 4]])
         targets (List[Dict])
@@ -209,7 +209,7 @@ class DenseCapRoIHeads(nn.Module):
         return proposals, matched_idxs, gt_captions, gt_captions_length, labels, regression_targets
 
     def postprocess_detections(self, logits, box_regression, caption_predicts, proposals, image_shapes,
-                               box_features, return_features):  # TODO: yun
+                               box_features, return_features):
         device = logits.device
         num_classes = logits.shape[-1]
 
@@ -278,7 +278,7 @@ class DenseCapRoIHeads(nn.Module):
 
         return all_boxes, all_scores, all_captions, all_box_features
 
-    def forward(self, features, proposals, image_shapes, targets=None):  # TODO: shi
+    def forward(self, features, proposals, image_shapes, targets=None):
         """
         Arguments:
             features (List[Tensor])

@@ -1,13 +1,11 @@
 # coding=utf8
 import re, argparse, json, string, pickle
 from collections import Counter
-from queue import Queue
-from threading import Thread, Lock
-import cv2
+
 
 import h5py
 import numpy as np
-import os
+
 
 """
 Modified from https://github.com/jcjohnson/densecap/blob/master/preprocess.py
@@ -61,17 +59,6 @@ The output Pickle file is an object with the following elements:
 The output HDF5 file has the following format to describe N images with
 M total regions:
 
-- images: uint8 array of shape (N, 3, image_size, image_size) of pixel data,
-  in BDHW format. Images will be resized so their longest edge is image_size
-  pixels long, aligned to the upper left corner, and padded with zeros.
-  The actual size of each image is stored in the image_heights and image_widths
-  fields.
-- image_heights: int32 array of shape (N,) giving the height of each image.
-- image_widths: int32 array of shape (N,) giving the width of each image.
-- original_heights: int32 array of shape (N,) giving the original height of
-  each image.
-- original_widths: int32 array of shape (N,) giving the original width of
-  each image.
 - boxes: int32 array of shape (M, 4) giving the coordinates of each bounding box.
   Each row is (xc, yc, w, h) where yc and xc are center coordinates of the box,
   and are one-indexed.
@@ -133,16 +120,16 @@ def build_vocab_dict(vocab):
 
 
 def encode_caption(tokens, token_to_idx, max_token_length):
-    encoded = np.ones(max_token_length + 2, dtype=np.int64) * token_to_idx['<pad>']
+    encoded = np.ones(max_token_length+2, dtype=np.int64) * token_to_idx['<pad>']
     encoded[0] = token_to_idx['<bos>']
-    encoded[len(tokens) + 1] = token_to_idx['<eos>']
+    encoded[len(tokens)+1] = token_to_idx['<eos>']
 
     for i, token in enumerate(tokens):
 
         if token in token_to_idx:
-            encoded[i + 1] = token_to_idx[token]
+            encoded[i+1] = token_to_idx[token]
         else:
-            encoded[i + 1] = token_to_idx['<unk>']
+            encoded[i+1] = token_to_idx['<unk>']
 
     return encoded
 
@@ -156,57 +143,42 @@ def encode_captions(data, token_to_idx, max_token_length):
             if tokens is None: continue
             tokens_encoded = encode_caption(tokens, token_to_idx, max_token_length)
             encoded_list.append(tokens_encoded)
-            lengths.append(len(tokens) + 2)
+            lengths.append(len(tokens)+2)
     return np.vstack(encoded_list), np.asarray(lengths, dtype=np.int64)  # in pytorch np.int64 is torch.long
 
 
-def encode_boxes(data, original_heights, original_widths, image_size, image_data, all_image_ids):
+def encode_boxes(data, image_data, all_image_ids):
     all_boxes = []
-
     for i, img in enumerate(data):
+
         img_info = image_data[all_image_ids.index(img['id'])]
         assert img['id'] == img_info['image_id'], 'id mismatch'
-
-        H, W = original_heights[i], original_widths[i]
-        scale = float(image_size) / max(H, W)
-        scaled_H, scaled_W = round(H * scale) - 1, round(W * scale) - 1
 
         for region in img['regions']:
             if region['tokens'] is None:
                 continue
 
-            x1, y1 = round(scale * (region['x'] - 1) + 1), round(scale * (region['y'] - 1) + 1)
-            w, h = round(scale * region['width']), round(scale * region['height'])
-            x2, y2 = x1 + w, y1 + h
+            x1, y1 = region['x'], region['y']
+            x2, y2 = x1 + region['width'], y1 + region['height']
+
+            if x1 < 0: x1 = 0
+            if y1 < 0: y1 = 0
 
             # sanity check
-            if x1 < 1: x1 = 1
-            if y1 < 1: y1 = 1
             try:
-                assert x1 <= scaled_W, 'invalid x1 coordinate {} > {} in image_id:{} box_id:{}'.format(x1, scaled_W,
-                                                                                                       img['id'],
-                                                                                                       region[
-                                                                                                           'region_id'])
-                assert y1 <= scaled_H, 'invalid y1 coordinate {} > {} in image_id:{} box_id:{}'.format(y1, scaled_H,
-                                                                                                       img['id'],
-                                                                                                       region[
-                                                                                                           'region_id'])
-                assert x2 <= scaled_W, 'invalid x2 coordinate {} > {} in image_id:{} box_id:{}'.format(x2, scaled_W,
-                                                                                                       img['id'],
-                                                                                                       region[
-                                                                                                           'region_id'])
-                assert y2 <= scaled_H, 'invalid y2 coordinate {} > {} in image_id:{} box_id:{}'.format(y2, scaled_H,
-                                                                                                       img['id'],
-                                                                                                       region[
-                                                                                                           'region_id'])
+                assert x1 <= img_info['width'], 'invalid x1 coordinate {} > {} in image_id:{} box_id:{}'.format(x1, img_info['width'], img['id'], region['region_id'])
+                assert y1 <= img_info['height'], 'invalid y1 coordinate {} > {} in image_id:{} box_id:{}'.format(y1, img_info['height'], img['id'], region['region_id'])
+                assert x2 <= img_info['width'], 'invalid x2 coordinate {} > {} in image_id:{} box_id:{}'.format(x2, img_info['width'], img['id'], region['region_id'])
+                assert y2 <= img_info['height'], 'invalid y2 coordinate {} > {} in image_id:{} box_id:{}'.format(y2, img_info['height'], img['id'], region['region_id'])
             except AssertionError as e:
                 print(e)
+
                 print('orignal bbox coordinate ', (x1, y1, x2, y2))
                 # clamp to image
-                if x1 > scaled_W: x1 = (scaled_W - 1) - w
-                if y1 > scaled_H: y1 = (scaled_H - 1) - h
-                if x2 > scaled_W: x2 = scaled_W - 1
-                if y2 > scaled_H: y2 = scaled_H - 1
+                if x1 > img_info['width']: x1 = (img_info['width']- 1) - region['width']
+                if y1 > img_info['height']: y1 = (img_info['height'] - 1) - region['height']
+                if x2 > img_info['width']: x2 = img_info['width']- 1
+                if y2 > img_info['height']: y2 = img_info['height'] - 1
                 print('clamped bbox coordinate ', (x1, y1, x2, y2))
 
             box = np.asarray([x1, y1, x2, y2], dtype=np.int32)
@@ -247,10 +219,12 @@ def build_filename_dict(data):
 
 
 def build_directory_dict(data, image_data, all_image_ids):
+
     idx_to_directory = dict()
 
     next_idx = 0
     for img in data:
+
         img_info = image_data[all_image_ids.index(img['id'])]
         assert img['id'] == img_info['image_id'], 'id mismatch'
 
@@ -341,7 +315,7 @@ def encode_splits(data, split_data):
         for idx in idxs:
             id_to_split[idx] = split
 
-    split_dict = {k: list() for k in split_data.keys()}
+    split_dict = {k:list() for k in split_data.keys()}
 
     for i, img in enumerate(data):
         split_dict[id_to_split[img['id']]].append(i)
@@ -362,70 +336,6 @@ def filter_images(data, split_data):
     return new_data
 
 
-def add_images(data, filename_to_idx, idx_to_directory, h5_file, args):
-    num_images = len(data)
-
-    shape = (num_images, 3, args.image_size, args.image_size)
-    image_dset = h5_file.create_dataset('images', shape, dtype=np.uint8)
-    original_heights = np.zeros(num_images, dtype=np.int32)
-    original_widths = np.zeros(num_images, dtype=np.int32)
-    image_heights = np.zeros(num_images, dtype=np.int32)
-    image_widths = np.zeros(num_images, dtype=np.int32)
-
-    lock = Lock()
-    q = Queue()
-
-    for i, img in enumerate(data):
-        filename = '%s.jpg' % img['id']
-        filename = os.path.join(args.image_dir, idx_to_directory[filename_to_idx[filename]], filename)  # 获取文件全名
-        q.put((i, filename))
-
-    def worker():
-        while True:
-            i, filename = q.get()
-            # 读取图片的时候可以改为opencv，速度更快
-            # img =  Image.open(filename).convert("RGB") # 读入然后更改颜色空间
-            img = cv2.imread(filename)  # 读入的图片是numpy格式
-            if img is None:
-                print('fail to load image!')
-            else:
-                img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)  # 通道转换
-
-                # handle grayscale
-                if img.ndim == 2:
-                    img = img[:, :, None][:, :, [0, 0, 0]]
-                H0, W0 = img.shape[0], img.shape[1]  # shape=(H,W,C)
-                if W0 > H0:
-                    width, height = args.image_size, int(float(args.image_size) / W0 * H0)
-                else:
-                    width, height = int(float(args.image_size) / H0 * W0), args.image_size
-                img = cv2.resize(img, (width, height))
-                W, H = width, height
-
-                lock.acquire()
-                if i % 1000 == 0:
-                    print(f'Writing image {i} / {len(data)}')
-                original_heights[i] = H0
-                original_widths[i] = W0
-                image_heights[i] = H
-                image_widths[i] = W
-                image_dset[i, :, :H, :W] = np.transpose(img, axes=[2, 0, 1])
-            lock.release()
-            q.task_done()
-
-    print('adding images to hdf5.... (this might take a while)')
-    for i in range(args.num_workers):
-        t = Thread(target=worker)
-        t.daemon = True
-        t.start()
-    q.join()
-
-    h5_file.create_dataset('image_heights', data=image_heights)
-    h5_file.create_dataset('image_widths', data=image_widths)
-    h5_file.create_dataset('original_heights', data=original_heights)
-    h5_file.create_dataset('original_widths', data=original_widths)
-
-
 def main(args):
     # read in the data
     with open(args.region_data, 'r') as f:
@@ -442,51 +352,45 @@ def main(args):
     data = filter_images(data, split_data)  # data为vg数据集定义的region description的格式的列表
     print(f'After filtering for splits there are {len(data)} images')
 
-    if args.max_images > 0:  # 保留指定的图片个数
+    if args.max_images > 0:
         data = data[:args.max_images]
 
     # add split information
     split = encode_splits(data, split_data)  # dict {'train': [idx, ...], 'val': [...], 'test': [...]}
 
     # create the output hdf5 file handle
-    f = h5py.File(args.h5_output, 'w')
+    with h5py.File(args.h5_output, 'w') as f:
 
-    # process "label" field in each region to a "tokens" field, and cap at some max length
-    # 即在data中每一个region处增加一个token键以及分词后的序列 长于max_token_length的描述被丢弃
-    split_filter_captions(data, args.max_token_length, args.tokens_type)
+        # process "label" field in each region to a "tokens" field, and cap at some max length
+        # 即在data中每一个region处增加一个token键以及分词后的序列 长于max_token_length的描述被丢弃
+        split_filter_captions(data, args.max_token_length, args.tokens_type)
 
-    # build vocabulary
-    vocab = build_vocab(data, args.min_token_instances)  # vocab is a list()
-    token_to_idx, idx_to_token = build_vocab_dict(vocab)  # both mappings are dicts 且从0开始计数
+        # build vocabulary
+        vocab = build_vocab(data, args.min_token_instances)  # vocab is a list()
+        token_to_idx, idx_to_token = build_vocab_dict(vocab)  # both mappings are dicts 且从0开始计数
 
-    # encode labels
-    # captions_matrix (M, max_token_length) 其中M为region总数
-    # lengths_vector (M, )
-    captions_matrix, lengths_vector = encode_captions(data, token_to_idx, args.max_token_length)
-    f.create_dataset('captions', data=captions_matrix)
-    f.create_dataset('lengths', data=lengths_vector)
+        # encode labels
+        # captions_matrix (M, max_token_length) 其中M为region总数
+        # lengths_vector (M, )
+        captions_matrix, lengths_vector = encode_captions(data, token_to_idx, args.max_token_length)
+        f.create_dataset('captions', data=captions_matrix)
+        f.create_dataset('lengths', data=lengths_vector)
 
-    # integer mapping between image ids and box ids
-    # img_idx是所有图像在data中的顺序 为了方便访问bbox 记录在M个region里起始和结束idx
-    img_to_first_box, img_to_last_box = build_img_idx_to_box_idxs(data)
-    f.create_dataset('img_to_first_box', data=img_to_first_box)
-    f.create_dataset('img_to_last_box', data=img_to_last_box)
-    # 建立img_idx与文件名的映射关系
-    filename_to_idx, idx_to_filename = build_filename_dict(data)
-    idx_to_directory = build_directory_dict(data, image_data, all_image_ids)
-    box_to_img = encode_filenames(data, filename_to_idx)
-    f.create_dataset('box_to_img', data=box_to_img)
+        # encode boxes
+        # 相对image_size拉伸标签中的bbox坐标参数 (M, 4)
+        boxes_matrix = encode_boxes(data, image_data, all_image_ids)
+        f.create_dataset('boxes', data=boxes_matrix)
 
-    # add several fields to the file: images, and the original/resized widths/heights
-    add_images(data, filename_to_idx, idx_to_directory, f, args)
-
-    # encode boxes
-    # 相对image_size拉伸标签中的bbox坐标参数 (M, 4)
-    original_heights = np.asarray(f['original_heights'])
-    original_widths = np.asarray(f['original_widths'])
-    boxes_matrix = encode_boxes(data, original_heights, original_widths, args.image_size, image_data, all_image_ids)
-    f.create_dataset('boxes', data=boxes_matrix)
-    f.close()
+        # integer mapping between image ids and box ids
+        # img_idx是所有图像在data中的顺序 为了方便访问bbox 记录在M个region里起始和结束idx
+        img_to_first_box, img_to_last_box = build_img_idx_to_box_idxs(data)
+        f.create_dataset('img_to_first_box', data=img_to_first_box)
+        f.create_dataset('img_to_last_box', data=img_to_last_box)
+        # 建立img_idx与文件名的映射关系
+        filename_to_idx, idx_to_filename = build_filename_dict(data)
+        idx_to_directory = build_directory_dict(data, image_data, all_image_ids)
+        box_to_img = encode_filenames(data, filename_to_idx)
+        f.create_dataset('box_to_img', data=box_to_img)
 
     # and write the additional pickle file
     pickle_struct = {
@@ -511,19 +415,16 @@ if __name__ == '__main__':
     parser.add_argument('--image_data',
                         default='data/visual-genome/image_data.json',
                         help='Input JSON file with image url weight and height')
-    parser.add_argument('--image_dir',
-                        default='data/visual-genome',
-                        help='Image saved directory')
     parser.add_argument('--split_json',
                         default='info/densecap_splits.json',
                         help='JSON file of splits')
 
     # OUTPUT settings
     parser.add_argument('--pickle_output',
-                        default='data/VG-regions-dicts.pkl',
+                        default='data/VG-regions-dicts-lite.pkl',
                         help='Path to output pickle file')
     parser.add_argument('--h5_output',
-                        default='data/VG-regions.h5',
+                        default='data/VG-regions-lite.h5',
                         help='Path to output HDF5 file')
 
     # OPTIONS
@@ -540,6 +441,5 @@ if __name__ == '__main__':
                         help="Words|chars for word or char split in captions")
     parser.add_argument('--max_images', default=-1, type=int,
                         help="Set to a positive number to limit the number of images we process")
-    parser.add_argument('--num_workers', default=5, type=int)
     args = parser.parse_args()
     main(args)
