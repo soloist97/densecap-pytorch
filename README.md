@@ -35,7 +35,7 @@ A simplified pytorch version of [jcjohnson/densecap](https://github.com/jcjohnso
     * Annotation files are `./data/visual-genome/region_descriptions.json` and `./data/visual-genome/image_data.json`
 2. `python preprocess.py`
 3. Now we get `./data/VG-regions-dicts-lite.pkl` and `./data/VG-regions-lite.h5`. See preprocess.py for more details.
-4. After preprocessing, file structures are list below:
+4. After preprocessing, file structures are listed below:
 ```
     data
     ├── visual-genome
@@ -64,9 +64,9 @@ A simplified pytorch version of [jcjohnson/densecap](https://github.com/jcjohnso
 
 ## Trained model
 
-We provide a playable checkpoint, Here is the link - [OneDrive](https://1drv.ms/u/s!AmN4YCVEJTAIhcEL0HQDwgl79REDzQ?e=xYKEO1)
-* It is initiated from pretrained torchvision Faster R-CNN and trained for at most 10 epochs on training set.
-* Place checkpoint (`.pth.tar`) and directory under `./model_params` 
+We provide a playable checkpoint, Here is the link - [OneDrive](https://1drv.ms/u/s!AmN4YCVEJTAIhcEL0HQDwgl79REDzQ?e=xYKEO1) or [BaiduYun](https://pan.baidu.com/s/17-4CnOWHK-ksLKRAzC2JVQ) (code is `lysh`)
+* It is initiated from the pretrained torchvision Faster R-CNN and trained for at most 10 epochs on the training set.
+* Place the checkpoint (`.pth.tar`) and the directory under `./model_params` 
 
 Performance on the val set (`train_all_val_all_bz_2_epoch_10_inject_init.pth.tar`):
 ```json
