@@ -159,10 +159,9 @@ def encode_boxes(data, image_data, all_image_ids):
                 continue
 
             x1, y1 = region['x'], region['y']
-            x2, y2 = x1 + region['width'], y1 + region['height']
-
             if x1 < 0: x1 = 0
             if y1 < 0: y1 = 0
+            x2, y2 = x1 + region['width'], y1 + region['height']
 
             # sanity check
             try:
