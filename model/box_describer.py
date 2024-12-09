@@ -92,7 +92,7 @@ class BoxDescriber(nn.Module):
 
         predicts = torch.ones(batch_size, self.max_len+1, dtype=torch.long).to(device) * self.special_idx['<pad>']
         predicts[:, 0] = torch.ones(batch_size, dtype=torch.long).to(device) * self.special_idx['<bos>']
-        keep = torch.arange(batch_size,)  # keep track of unfinished sequences
+        keep = torch.arange(batch_size, device=device)  # keep track of unfinished sequences
 
         h, c = self.init_hidden(batch_size, device)
         if self.fusion_type == 'init_inject':
